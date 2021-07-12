@@ -263,7 +263,7 @@ def main():
     init = tf.global_variables_initializer()
     sess.run(init)
 
-    # Saver for storing checkpoints of the model.
+    # Saver for storing checkpoint of the model.
     all_saver_var = tf.global_variables()
     restore_var = all_saver_var #[v for v in all_saver_var if 'pose' not in v.name and 'parsing' not in v.name]
     saver = tf.train.Saver(var_list=all_saver_var, max_to_keep=50)

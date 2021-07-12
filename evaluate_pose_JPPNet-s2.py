@@ -2,17 +2,20 @@ from __future__ import division
 import os
 import time
 from glob import glob
+
+import cv2
 import tensorflow as tf
 import numpy as np
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+from PIL import Image
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from utils import *
 from LIP_model import *
 import matplotlib.pyplot as plt
 import scipy.misc
 import scipy.io as sio
 
-
-NUM_STEPS = 6 # Number of images in the validation set.
+NUM_STEPS = 6  # Number of images in the validation set.
 INPUT_SIZE = (384, 384)
 N_CLASSES = 20
 DATA_DIRECTORY = './datasets/examples'
@@ -22,9 +25,10 @@ OUTPUT_DIR = './output/pose/val'
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
+
 def main():
     """Create the model and start the evaluation process."""
-    
+
     # Create queue coordinator.
     coord = tf.train.Coordinator()
     h, w = INPUT_SIZE
@@ -34,7 +38,7 @@ def main():
         image = reader.image
         image_rev = tf.reverse(image, tf.stack([1]))
         image_list = reader.image_list
-    
+
     image_batch_origin = tf.stack([image, image_rev])
     image_batch = tf.image.resize_images(image_batch_origin, [int(h), int(w)])
     image_batch125 = tf.image.resize_images(image_batch_origin, [int(h * 1.25), int(w * 1.25)])
@@ -47,7 +51,6 @@ def main():
         net_125 = JPPNetModel({'data': image_batch125}, is_training=False, n_classes=N_CLASSES)
     with tf.variable_scope('', reuse=True):
         net_075 = JPPNetModel({'data': image_batch075}, is_training=False, n_classes=N_CLASSES)
-
 
     # parsing net
     parsing_fea1_100 = net_100.layers['res5d_branch2b_parsing']
@@ -62,29 +65,32 @@ def main():
     resnet_fea_100 = net_100.layers['res4b22_relu']
     resnet_fea_125 = net_125.layers['res4b22_relu']
     resnet_fea_075 = net_075.layers['res4b22_relu']
-    
+
     with tf.variable_scope('', reuse=False):
         pose_out1_100, pose_fea1_100 = pose_net(resnet_fea_100, 'fc1_pose')
         pose_out2_100, pose_fea2_100 = pose_refine(pose_out1_100, parsing_out1_100, pose_fea1_100, name='fc2_pose')
-        parsing_out2_100, parsing_fea2_100 = parsing_refine(parsing_out1_100, pose_out1_100, parsing_fea1_100, name='fc2_parsing')
+        parsing_out2_100, parsing_fea2_100 = parsing_refine(parsing_out1_100, pose_out1_100, parsing_fea1_100,
+                                                            name='fc2_parsing')
         pose_out3_100, pose_fea3_100 = pose_refine(pose_out2_100, parsing_out2_100, pose_fea2_100, name='fc3_pose')
 
     with tf.variable_scope('', reuse=True):
         pose_out1_125, pose_fea1_125 = pose_net(resnet_fea_125, 'fc1_pose')
         pose_out2_125, pose_fea2_125 = pose_refine(pose_out1_125, parsing_out1_125, pose_fea1_125, name='fc2_pose')
-        parsing_out2_125, parsing_fea2_125 = parsing_refine(parsing_out1_125, pose_out1_125, parsing_fea1_125, name='fc2_parsing')
+        parsing_out2_125, parsing_fea2_125 = parsing_refine(parsing_out1_125, pose_out1_125, parsing_fea1_125,
+                                                            name='fc2_parsing')
         pose_out3_125, pose_fea3_125 = pose_refine(pose_out2_125, parsing_out2_125, pose_fea2_125, name='fc3_pose')
 
     with tf.variable_scope('', reuse=True):
         pose_out1_075, pose_fea1_075 = pose_net(resnet_fea_075, 'fc1_pose')
         pose_out2_075, pose_fea2_075 = pose_refine(pose_out1_075, parsing_out1_075, pose_fea1_075, name='fc2_pose')
-        parsing_out2_075, parsing_fea2_075 = parsing_refine(parsing_out1_075, pose_out1_075, parsing_fea1_075, name='fc2_parsing')
+        parsing_out2_075, parsing_fea2_075 = parsing_refine(parsing_out1_075, pose_out1_075, parsing_fea1_075,
+                                                            name='fc2_parsing')
         pose_out3_075, pose_fea3_075 = pose_refine(pose_out2_075, parsing_out2_075, pose_fea2_075, name='fc3_pose')
 
-
-    pose_out3 = tf.reduce_mean(tf.stack([tf.image.resize_nearest_neighbor(pose_out3_100, tf.shape(image_batch_origin)[1:3,]),
-                                         tf.image.resize_nearest_neighbor(pose_out3_125, tf.shape(image_batch_origin)[1:3,]),
-                                         tf.image.resize_nearest_neighbor(pose_out3_075, tf.shape(image_batch_origin)[1:3,])]), axis=0)
+    pose_out3 = tf.reduce_mean(
+        tf.stack([tf.image.resize_nearest_neighbor(pose_out3_100, tf.shape(image_batch_origin)[1:3, ]),
+                  tf.image.resize_nearest_neighbor(pose_out3_125, tf.shape(image_batch_origin)[1:3, ]),
+                  tf.image.resize_nearest_neighbor(pose_out3_075, tf.shape(image_batch_origin)[1:3, ])]), axis=0)
 
     head_output, tail_output = tf.unstack(pose_out3, num=2, axis=0)
     tail_list = tf.unstack(tail_output, num=16, axis=2)
@@ -119,10 +125,10 @@ def main():
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     init = tf.global_variables_initializer()
-    
+
     sess.run(init)
     sess.run(tf.local_variables_initializer())
-    
+
     # Load weights.
     loader = tf.train.Saver(var_list=restore_var)
     if RESTORE_FROM is not None:
@@ -130,10 +136,9 @@ def main():
             print(" [*] Load SUCCESS")
         else:
             print(" [!] Load failed...")
-    
+
     # Start queue threads.
     threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-    
 
     # Iterate over training steps.
     for step in range(NUM_STEPS):
@@ -141,30 +146,29 @@ def main():
         save_lip_images(image_list[step], predict_, OUTPUT_DIR)
         if step % 100 == 0:
             print('step {:d}'.format(step))
-            print (image_list[step])
+            print(image_list[step])
 
     coord.request_stop()
     coord.join(threads)
-   
+
 
 def save_lip_images(image_path, samples, out_dir):
-    img_A = scipy.misc.imread(image_path).astype(np.float)
+    img_A = np.array(Image.open(image_path), dtype=np.float)
+    img_A = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB).astype(np.float)
     rows = img_A.shape[0]
     cols = img_A.shape[1]
     image = samples[0]
     img_split = image_path.split('/')
     img_id = img_split[-1][:-4]
     with open('{}/{}.txt'.format(out_dir, img_id), 'w') as f:
-        for p in xrange(image.shape[2]):
-            channel_ = image[:,:,p]
+        for p in range(image.shape[2]):
+            channel_ = image[:, :, p]
             if channel_.shape[0] != rows or channel_.shape[1] != cols:
-                print ('sizes do not match...')
-                channel_ = scipy.misc.imresize(channel_, [rows, cols], interp='nearest')
+                print('sizes do not match...')
+                channel_ = cv2.resize(channel_, [rows, cols], interpolation=cv2.INTER_NEAREST)
             r_, c_ = np.unravel_index(channel_.argmax(), channel_.shape)
             f.write('%d %d ' % (int(c_), int(r_)))
 
 
 if __name__ == '__main__':
     main()
-
-
